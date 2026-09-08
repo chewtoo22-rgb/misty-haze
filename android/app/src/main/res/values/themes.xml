@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MistyHaze" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#F6821F</item>
+        <item name="colorPrimaryVariant">#E67E22</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:statusBarColor">#F6821F</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowBackground">#F9FAFB</item>
+    </style>
+</resources>
