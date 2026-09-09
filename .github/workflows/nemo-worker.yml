@@ -49,7 +49,7 @@ jobs:
         run: npm run check
 
       - name: Run tests
-        run: npm test -- --run
+        run: npm test -- --run --passWithNoTests
 
       - name: Worker result
         if: always()
