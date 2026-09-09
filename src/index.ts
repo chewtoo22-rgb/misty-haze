@@ -49,7 +49,7 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
     const mode = body.mode === "code" || body.mode === "agent" ? body.mode : "chat";
     const agentRole: AgentRole = body.agentRole ?? (mode === "code" ? "coder" : "planner");
     const messages: ChatMessage[] = (Array.isArray(body.messages) ? body.messages : []).filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string").slice(-24);
-    const modePrompt = mode === "code" ? `Current mode: CODE. Route the work through NEMO.\n\n${AGENT_PROMPTS[agentRole]}` : mode === "agent" ? `Current mode: AGENT. ${AGENT_PROMPTS[planner]}` : "Current mode: CHAT. Misty is the primary conversational orchestrator.";
+    const modePrompt = mode === "code" ? `Current mode: CODE. Route the work through NEMO.\n\n${AGENT_PROMPTS[agentRole]}` : mode === "agent" ? `Current mode: AGENT. Route planning and execution through NEMO's planner role.\n\n${AGENT_PROMPTS.planner}` : "Current mode: CHAT. Misty is the primary conversational orchestrator.";
     messages.unshift({ role: "system", content: `${BASE_PROMPT}\n\n${modePrompt}\n\nGitHub read tools are available only when GITHUB_TOKEN is configured.` });
     const model = mode === "code" || mode === "agent" ? NEMO_MODEL : CHAT_MODEL;
     if ((mode === "code" || mode === "agent") && env.GITHUB_TOKEN) {
