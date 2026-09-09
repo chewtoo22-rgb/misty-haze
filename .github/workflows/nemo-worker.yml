@@ -1,0 +1,61 @@
+name: Misty Haze — Nemo Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Task for Nemo worker"
+        required: true
+        type: string
+      ref:
+        description: "Branch to inspect/test"
+        required: true
+        default: "misty-nemo-agent"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Report Nemo task
+        env:
+          NEMO_TASK: ${{ inputs.task }}
+        run: |
+          echo "=== MISTY HAZE / NEMO WORKER ==="
+          echo "Branch: $GITHUB_REF_NAME"
+          echo "Task: $NEMO_TASK"
+          echo "Commit: $GITHUB_SHA"
+
+      - name: Typecheck and Wrangler validation
+        run: npm run check
+
+      - name: Run tests
+        run: npm test -- --run --passWithNoTests
+
+      - name: Worker result
+        if: always()
+        run: |
+          echo "=== NEMO WORKER COMPLETE ==="
+          echo "task=${{ inputs.task }}"
+          echo "ref=${{ inputs.ref }}"
+          echo "sha=$GITHUB_SHA"
+          echo "job_status=${{ job.status }}"
