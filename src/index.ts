@@ -1,15 +1,28 @@
 import { ChatMessage, Env } from "./types";
 
-const MODEL_ID = "@cf/meta/llama-3.1-8b-instruct-fp8";
-const BASE_PROMPT = `You are Misty Haze, a capable personal AI assistant. You are an independent assistant, not a component of another agent system. You have three operating modes: chat, code, and agent.
+const CHAT_MODEL = "@cf/zai-org/glm-4.7-flash";
+const NEMO_MODEL = "@cf/nvidia/nemotron-3-120b-a12b";
+
+type AgentRole = "coder" | "reviewer" | "tester" | "planner";
+
+const BASE_PROMPT = `You are Misty Haze, a capable personal AI assistant. You are an independent assistant and a standalone project.
 
 Be concise, practical, and honest about capabilities. Never claim to have performed an action you did not actually perform. For complex requests, reason through the goal and produce a clear plan before acting.
 
-In CODE mode, behave like a careful coding agent: analyze the request, identify files or components that would need changing, propose precise implementation steps, and provide test/verification guidance. Do not pretend to edit or run a repository when repository tools are unavailable.
+Misty Haze is being built as a lightweight multi-agent assistant. Specialized agents are workers controlled by Misty; they are not separate products or replacements for Misty.
 
-In AGENT mode, behave like a computer-use agent: interpret device observations when provided, choose the smallest safe action, explain the intended action, and verify the result when an observation is available. Do not claim to control a device unless an actual device-control tool is connected.
+In CODE mode, behave like a professional software engineering agent. Analyze requirements, identify affected files, design the smallest robust change, consider edge cases, and provide verification steps. When repository tools are connected, use them rather than pretending to have access.
 
-Misty Haze's long-term capabilities are intended to include computer vision, PC use, Android use, coding, and tool execution. When those tools are not connected, clearly distinguish planned capability from currently available capability.`;
+In AGENT mode, behave like a careful tool-using computer agent. Choose the smallest safe action, verify results, and never claim device control without an actual connected tool.
+
+The long-term Misty Haze plan includes computer vision, PC use, Android use, coding, repository tools, testing, and autonomous repair loops. Clearly distinguish planned capabilities from connected capabilities.`;
+
+const AGENT_PROMPTS: Record<AgentRole, string> = {
+  coder: `You are NEMO, Misty Haze's primary coding agent. Focus on implementation quality, repository-aware reasoning, debugging, refactoring, tests, and production-ready code. Prefer small, reversible changes. When tools are available, inspect before modifying and verify after modifying.`,
+  reviewer: `You are NEMO in REVIEWER role. Review proposed software changes aggressively but constructively. Look for correctness bugs, regressions, security issues, bad assumptions, missing tests, and unnecessary complexity. Return concrete fixes.`,
+  tester: `You are NEMO in TESTER role. Design and reason through focused tests, build checks, failure diagnosis, and regression coverage. When given an error, identify the likely root cause and the smallest reliable repair.`,
+  planner: `You are NEMO in PLANNER role. Turn a software goal into an ordered implementation plan with dependencies, acceptance criteria, verification steps, and rollback considerations. Avoid speculative architecture.`,
+};
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -19,7 +32,7 @@ export default {
       return json({
         name: "Misty Haze",
         status: "online",
-        model: MODEL_ID,
+        models: { chat: CHAT_MODEL, coding: NEMO_MODEL },
         capabilities: {
           chat: true,
           code: true,
@@ -28,7 +41,25 @@ export default {
           pcControl: false,
           androidControl: false,
           tools: false,
+          github: false,
+          autonomousRepair: false,
         },
+        agents: [
+          { id: "misty", role: "orchestrator", model: CHAT_MODEL, status: "active" },
+          { id: "nemo", role: "coder", model: NEMO_MODEL, status: "active" },
+          { id: "nemo-review", role: "reviewer", model: NEMO_MODEL, status: "ready" },
+          { id: "nemo-test", role: "tester", model: NEMO_MODEL, status: "ready" },
+          { id: "nemo-plan", role: "planner", model: NEMO_MODEL, status: "ready" },
+        ],
+      });
+    }
+
+    if (url.pathname === "/api/agents" && request.method === "GET") {
+      return json({
+        primary: "misty",
+        coding: "nemo",
+        agents: ["nemo", "nemo-review", "nemo-test", "nemo-plan"],
+        execution: "Cloudflare Workers AI",
       });
     }
 
@@ -44,35 +75,42 @@ export default {
 
 async function handleChatRequest(request: Request, env: Env): Promise<Response> {
   try {
-    const body = await request.json() as { messages?: ChatMessage[]; mode?: string };
+    const body = await request.json() as {
+      messages?: ChatMessage[];
+      mode?: string;
+      agentRole?: AgentRole;
+    };
+
     const mode = body.mode === "code" || body.mode === "agent" ? body.mode : "chat";
+    const agentRole: AgentRole = body.agentRole ?? (mode === "code" ? "coder" : "planner");
     const incoming = Array.isArray(body.messages) ? body.messages : [];
 
-    // Bound browser sessions so prompt size cannot grow without limit.
     const messages = incoming
       .filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
       .slice(-24);
 
     const modePrompt = mode === "code"
-      ? "Current mode: CODE. Focus on software engineering, repository analysis, implementation planning, debugging, testing, and precise code changes."
+      ? `Current mode: CODE. Route the coding work through NEMO.\n\n${AGENT_PROMPTS[agentRole]}`
       : mode === "agent"
-        ? "Current mode: AGENT. Focus on computer-use tasks. Device observations may be supplied later; until then, explain what would be needed and never imply that an action was executed."
-        : "Current mode: CHAT. Focus on useful conversation, research, explanation, and problem solving.";
+        ? "Current mode: AGENT. Coordinate tools and computer-use tasks. Until real tools are connected, describe the required action without claiming it happened."
+        : "Current mode: CHAT. Misty is the primary conversational orchestrator. Use the fast model for normal conversation and reasoning.";
 
     messages.unshift({ role: "system", content: `${BASE_PROMPT}\n\n${modePrompt}` });
 
+    const model = mode === "code" || mode === "agent" ? NEMO_MODEL : CHAT_MODEL;
     const inputs = {
       messages,
-      max_tokens: 1536,
+      max_tokens: mode === "code" ? 3072 : 1536,
       stream: true,
     } satisfies AiTextGenerationInput & { stream: true };
 
-    const stream = await env.AI.run<typeof MODEL_ID>(MODEL_ID, inputs);
+    const stream = await env.AI.run<typeof model>(model, inputs);
     return new Response(stream, {
       headers: {
         "content-type": "text/event-stream; charset=utf-8",
         "cache-control": "no-cache",
         "connection": "keep-alive",
+        "x-misty-agent": mode === "code" || mode === "agent" ? "nemo" : "misty",
       },
     });
   } catch (error) {
