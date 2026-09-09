@@ -8,6 +8,19 @@ const DEFAULT_BRANCH = "main";
 type AgentRole = "coder" | "reviewer" | "tester" | "planner";
 type ToolCall = { name: string; arguments?: Record<string, unknown> };
 
+type GithubTool = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: "object";
+      properties: Record<string, { type: "string" }>;
+      required: string[];
+    };
+  };
+};
+
 const BASE_PROMPT = `You are Misty Haze, a capable personal AI assistant. You are an independent assistant and a standalone project.
 
 Be concise, practical, and honest about capabilities. Never claim to have performed an action you did not actually perform. For complex requests, reason through the goal and produce a clear plan before acting.
@@ -25,9 +38,23 @@ const AGENT_PROMPTS: Record<AgentRole, string> = {
   planner: `You are NEMO in PLANNER role. Turn a software goal into an ordered implementation plan with dependencies, acceptance criteria, verification steps, and rollback considerations.`,
 };
 
-const GITHUB_TOOLS = [
-  { name: "github_list_files", description: "List files in the configured GitHub repository. Use before coding to understand project structure.", parameters: { type: "object", properties: { path: { type: "string" }, branch: { type: "string" } }, required: [] } },
-  { name: "github_read_file", description: "Read a text file from the configured GitHub repository.", parameters: { type: "object", properties: { path: { type: "string" }, branch: { type: "string" } }, required: ["path"] } },
+const GITHUB_TOOLS: GithubTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "github_list_files",
+      description: "List files in the configured GitHub repository. Use before coding to understand project structure.",
+      parameters: { type: "object", properties: { path: { type: "string" }, branch: { type: "string" } }, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_read_file",
+      description: "Read a text file from the configured GitHub repository.",
+      parameters: { type: "object", properties: { path: { type: "string" }, branch: { type: "string" } }, required: ["path"] },
+    },
+  },
 ];
 
 export default {
@@ -35,7 +62,7 @@ export default {
     const url = new URL(request.url);
     const github = Boolean(env.GITHUB_TOKEN);
     if (url.pathname === "/api/status" && request.method === "GET") return json({ name: "Misty Haze", status: "online", models: { chat: CHAT_MODEL, coding: NEMO_MODEL }, capabilities: { chat: true, code: true, agent: true, vision: false, pcControl: false, androidControl: false, tools: github, github, autonomousRepair: false }, github: { configured: github, repository: env.GITHUB_REPO ?? DEFAULT_REPO, defaultBranch: env.GITHUB_DEFAULT_BRANCH ?? DEFAULT_BRANCH }, agents: [{ id: "misty", role: "orchestrator", model: CHAT_MODEL, status: "active" }, { id: "nemo", role: "coder", model: NEMO_MODEL, status: "active" }, { id: "nemo-review", role: "reviewer", model: NEMO_MODEL, status: "ready" }, { id: "nemo-test", role: "tester", model: NEMO_MODEL, status: "ready" }, { id: "nemo-plan", role: "planner", model: NEMO_MODEL, status: "ready" }] });
-    if (url.pathname === "/api/agents" && request.method === "GET") return json({ primary: "misty", coding: "nemo", agents: ["nemo", "nemo-review", "nemo-test", "nemo-plan"], tools: GITHUB_TOOLS.map((tool) => tool.name) });
+    if (url.pathname === "/api/agents" && request.method === "GET") return json({ primary: "misty", coding: "nemo", agents: ["nemo", "nemo-review", "nemo-test", "nemo-plan"], tools: GITHUB_TOOLS.map((tool) => tool.function.name) });
     if (url.pathname === "/" || !url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
     if (url.pathname !== "/api/chat") return new Response("Not found", { status: 404 });
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -68,7 +95,7 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
 
 async function streamModel(env: Env, model: string, messages: ChatMessage[], max_tokens: number): Promise<Response> {
   const stream = await env.AI.run(model, { messages, max_tokens, stream: true });
-  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", "connection": "keep-alive", "x-misty-agent": model === NEMO_MODEL ? "nemo" : "misty" } });
+  return new Response(stream as BodyInit, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", "connection": "keep-alive", "x-misty-agent": model === NEMO_MODEL ? "nemo" : "misty" } });
 }
 
 function extractToolCalls(result: unknown): ToolCall[] {
