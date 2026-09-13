@@ -68,6 +68,7 @@ export default {
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
     return handleChatRequest(request, env);
   },
+  }
 } satisfies ExportedHandler<Env>;
 
 async function handleChatRequest(request: Request, env: Env): Promise<Response> {

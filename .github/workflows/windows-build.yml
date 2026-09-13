@@ -1,0 +1,39 @@
+name: Misty Haze Windows Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish standalone EXE
+        run: dotnet publish windows/MistyHaze.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o windows/publish
+
+      - name: Create portable package
+        shell: pwsh
+        run: Compress-Archive -Path windows/publish/* -DestinationPath Misty-Haze-Windows-x64.zip -Force
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Misty-Haze-Windows-x64
+          path: Misty-Haze-Windows-x64.zip
+          retention-days: 30
