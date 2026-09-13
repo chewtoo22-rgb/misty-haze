@@ -23,7 +23,7 @@
 		"@vitest/runner": "4.1.10",
 		"@vitest/snapshot": "4.1.10",
 		"typescript": "5.9.3",
-		"vitest": "4.1.10",
+		"vitest": "4.1.11",
 		"wrangler": "4.127.0"
 	},
 	"private": true,
